@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GOL</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #111;
+      color: #eee;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      margin-bottom: 10px;
+    }
+
+    canvas {
+      border: 2px solid #555;
+      background: #000;
+      image-rendering: pixelated;
+    }
+
+    .controls {
+      margin-top: 15px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    button {
+      padding: 8px 12px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .stats {
+      margin-top: 12px;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <h1>Persistent Life Simulation</h1>
+  <canvas id="canvas"></canvas>
+
+  <div class="controls">
+    <button id="startBtn">Start</button>
+    <button id="stopBtn">Stop</button>
+    <button id="stepBtn">Step</button>
+    <button id="resetBtn">Reset</button>
+    <button id="randomBtn">Randomize</button>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <script>
+    const COLS = 32;
+    const ROWS = 24;
+    const CELL = 20;
+
+    const DEAD = 0;
+    const NEW = 1;
+    const MATURE = 2;
+    const DYING = 3;
+	const REFRESH = 200;
+
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const stats = document.getElementById("stats");
+
+    canvas.width = COLS * CELL;
+    canvas.height = ROWS * CELL;
+
+    let grid = [];
+    let running = false;
+    let timer = null;
+    let generation = 0;
+    let history = [];
+    const HISTORY_LIMIT = 12;
+
+    function makeGrid(fill = DEAD) {
+      return Array.from({ length: ROWS }, () => Array(COLS).fill(fill));
+    }
+
+    function isAlive(value) {
+      return value === NEW || value === MATURE;
+    }
+
+    function randomGrid(density = 0.35) {
+      return Array.from({ length: ROWS }, () =>
+        Array.from({ length: COLS }, () => Math.random() < density ? NEW : DEAD)
+      );
+    }
+
+    function serializeGrid(g) {
+      return g.map(row => row.map(cell => isAlive(cell) ? 1 : 0).join("")).join("|");
+    }
+
+    function countAlive(g) {
+      let total = 0;
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (isAlive(g[y][x])) total++;
+        }
+      }
+      return total;
+    }
+
+    function neighbors(g, x, y) {
+      let n = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = (x + dx + COLS) % COLS;
+          const ny = (y + dy + ROWS) % ROWS;
+          if (isAlive(g[ny][nx])) n++;
+        }
+      }
+      return n;
+    }
+
+    // HighLife-like rules: B36/S23
+    function nextGrid(current) {
+      const next = makeGrid(DEAD);
+
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const alive = isAlive(current[y][x]);
+          const n = neighbors(current, x, y);
+
+          if (!alive && (n === 3 || n === 6)) {
+            next[y][x] = NEW;
+          } else if (alive && (n === 2 || n === 3)) {
+            next[y][x] = MATURE;
+          } else if (alive) {
+            next[y][x] = DYING;
+          } else {
+            next[y][x] = DEAD;
+          }
+        }
+      }
+
+      return next;
+    }
+
+    function injectMutation(g, count = 8) {
+      for (let i = 0; i < count; i++) {
+        const x = Math.floor(Math.random() * COLS);
+        const y = Math.floor(Math.random() * ROWS);
+
+        if (isAlive(g[y][x])) {
+          g[y][x] = DYING;
+        } else {
+          g[y][x] = NEW;
+        }
+      }
+    }
+
+    function clearDyingCells(g) {
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (g[y][x] === DYING) {
+            g[y][x] = DEAD;
+          }
+        }
+      }
+    }
+
+    function reviveIfNeeded(g) {
+      const alive = countAlive(g);
+
+      if (alive === 0) {
+        return randomGrid(0.35);
+      }
+
+      if (alive < 20) {
+        injectMutation(g, 20);
+      } else if (alive < 60) {
+        injectMutation(g, 6);
+      }
+
+      return g;
+    }
+
+    function detectRepeat(serialized) {
+      return history.includes(serialized);
+    }
+
+    function updateHistory(serialized) {
+      history.push(serialized);
+      if (history.length > HISTORY_LIMIT) {
+        history.shift();
+      }
+    }
+
+    function step() {
+      clearDyingCells(grid);
+
+      generation++;
+      let next = nextGrid(grid);
+      let state = serializeGrid(next);
+
+      if (detectRepeat(state)) {
+        injectMutation(next, 12);
+        state = serializeGrid(next);
+      }
+
+      next = reviveIfNeeded(next);
+
+      if (generation % 50 === 0) {
+        injectMutation(next, 3);
+      }
+
+      grid = next;
+      updateHistory(state);
+      draw();
+    }
+
+    function getCellColor(value) {
+      switch (value) {
+        case NEW:
+          return "#b6d7a8";   // light green
+        case MATURE:
+          return "#8fce00";   // green
+        case DYING:
+          return "#274e13";   // dark green
+		  case DEAD:
+        default:
+          return "#111";
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          ctx.fillStyle = getCellColor(grid[y][x]);
+          ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+
+          ctx.strokeStyle = "#222";
+          ctx.strokeRect(x * CELL, y * CELL, CELL, CELL);
+        }
+      }
+
+      stats.textContent =
+        `Generation: ${generation} | Alive: ${countAlive(grid)} | History: ${history.length}`;
+    }
+
+    function reset() {
+      grid = makeGrid(DEAD);
+      generation = 0;
+      history = [];
+      draw();
+    }
+
+    function randomize() {
+      grid = randomGrid(0.35);
+      generation = 0;
+      history = [];
+      draw();
+    }
+
+    function start() {
+      if (running) return;
+      running = true;
+      timer = setInterval(step, REFRESH);
+    }
+
+    function stop() {
+      running = false;
+      clearInterval(timer);
+    }
+
+    canvas.addEventListener("click", e => {
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / CELL);
+      const y = Math.floor((e.clientY - rect.top) / CELL);
+
+      if (x >= 0 && x < COLS && y >= 0 && y < ROWS) {
+        grid[y][x] = isAlive(grid[y][x]) ? DYING : NEW;
+        draw();
+      }
+    });
+
+    document.getElementById("startBtn").addEventListener("click", start);
+    document.getElementById("stopBtn").addEventListener("click", stop);
+    document.getElementById("stepBtn").addEventListener("click", step);
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      stop();
+      reset();
+    });
+    document.getElementById("randomBtn").addEventListener("click", () => {
+      stop();
+      randomize();
+    });
+
+    randomize();
+  </script>
+</body>
+</html>
