@@ -2,6 +2,10 @@
 
 This repository contains a small browser-based implementation of Conway's Game of Life, built as a single HTML file: `GOL.browser`.
 
+#Links to ESP32 board
+https://de.aliexpress.com/item/1005007566332450.html#nav-specification
+https://pan.jczn1688.com/directlink/1/HMI%20display/JC3248W535EN.zip
+
 ## What it does
 
 The page renders a 32x24 cellular automata grid on an HTML `<canvas>`. Each cell can be alive or dead, and the simulation evolves over time using a variant of the Game of Life rules.
