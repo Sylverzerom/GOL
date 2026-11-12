@@ -2,7 +2,7 @@
 
 This repository contains a small browser-based implementation of Conway's Game of Life, built as a single HTML file: `GOL.browser`.
 
-#Links to ESP32 board
+## Links to ESP32 board
 https://de.aliexpress.com/item/1005007566332450.html#nav-specification
 https://pan.jczn1688.com/directlink/1/HMI%20display/JC3248W535EN.zip
 
